@@ -13,4 +13,3 @@ Process:
     Arguments:
       command: "curl -o %OUTPUT_FILE% %DOWNLOAD_URL%"
       timeout: "%TIMEOUT%"
-      live_output: "%LIVE_OUTPUT%"

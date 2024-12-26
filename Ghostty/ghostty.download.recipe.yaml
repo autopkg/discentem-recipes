@@ -1,0 +1,16 @@
+Identifier: com.github.discentem.download.ghostty
+Description: A recipe to download https://github.com/ghostty-org/ghostty/
+MinimumVersion: "2.3"
+
+Input: {}
+
+Process:
+  - Processor: GitHubReleasesInfoProvider
+    Arguments:
+      github_repo: 'ghostty-org/ghostty'
+      asset_regex: 'ghostty-macos-universal.zip'
+      include_prereleases: 'true'
+
+  - Processor: URLDownloader
+
+  - Processor: EndOfCheckPhase
