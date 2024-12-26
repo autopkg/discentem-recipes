@@ -1,0 +1,17 @@
+Identifier: com.github.discentem.install.ghostty
+Description: A recipe to install https://github.com/ghostty-org/ghostty/
+ParentRecipe: com.github.discentem.download.ghostty
+MinimumVersion: "2.3"
+
+Input:
+  # Unarchiver requires NAME to be defined
+  NAME: Ghostty.app
+
+Process:
+  - Processor: Unarchiver
+
+  - Processor: Copier
+    Arguments:
+      source_path: '%RECIPE_CACHE_DIR%/Ghostty/Ghostty.app'
+      destination_path: '/Applications/Ghostty.app'
+      overwrite: true
