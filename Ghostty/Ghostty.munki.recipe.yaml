@@ -3,7 +3,6 @@ Description: "Downloads the latest version of Ghostty and imports it into Munki.
 Comment: "Created with Recipe Robot v2.3.1 (https://github.com/homebysix/recipe-robot)"
 
 Input:
-  MUNKI_REPO: '/Users/bk/munki_repo'
   MUNKI_REPO_SUBDIR: 'apps/%NAME%'
   NAME: Ghostty
   pkginfo:
