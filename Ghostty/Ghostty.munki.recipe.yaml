@@ -16,10 +16,8 @@ Input:
 MinimumVersion: '2.3'
 ParentRecipe: com.github.discentem.download.Ghostty
 Process:
-  - Processor: AppPkgCreator
-    Arguments:
-      app_path: '%RECIPE_CACHE_DIR%/Ghostty/Ghostty.app'
   - Processor: MunkiImporter
     Arguments:
-      pkg_path: '%RECIPE_CACHE_DIR%/Ghostty-%version%.pkg'
+      # found by FileFinder in download recipe
+      pkg_path: '%RECIPE_CACHE_DIR%/Ghostty-%version%.dmg'
       repo_subdirectory: '%MUNKI_REPO_SUBDIR%'
