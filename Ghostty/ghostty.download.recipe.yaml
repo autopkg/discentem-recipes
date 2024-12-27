@@ -6,15 +6,16 @@ Input:
   NAME: Ghostty
 MinimumVersion: '2.3'
 Process:
-  - Processor: GitHubReleasesInfoProvider
+  - Processor: URLTextSearcher
     Arguments:
-      github_repo: 'ghostty-org/ghostty'
-      asset_regex: 'Ghostty.dmg'
-      include_prereleases: 'true'
-  
+      url: https://ghostty.org/download
+      re_pattern: 'https:\/\/release\.files\.ghostty\.org\/\d+\.\d+\.\d+\/Ghostty\.dmg'
+
   - Processor: EndOfCheckPhase
   
   - Processor: URLDownloader
+    Arguments:
+      url: '%match%'
 
   - Processor: FileFinder
     Arguments:
