@@ -8,8 +8,6 @@ Input:
   NAME: Ghostty.app
 
 Process:
-  - Processor: Unarchiver
-
   - Processor: Copier
     Arguments:
       source_path: '%found_filename%/Ghostty.app'
