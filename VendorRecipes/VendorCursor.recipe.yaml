@@ -1,0 +1,16 @@
+Description: Obtain upstream Cursor recipe from autopkg/peetinc-recipes
+
+Identifier: com.github.discentem.VendorCursor
+
+MinimumVersion: '2.3'
+
+Input: {}
+
+Process:
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    # Vendor Cursor Recipe
+    Arguments:
+      github_repo: autopkg/peetinc-recipes
+      destination_path: Cursor
+      folder_path: Cursor
+      commit_sha: 4d5e1aab90f9de9799d471d2339a4371eeacda29
