@@ -1,0 +1,15 @@
+Description: Grab Graham Pugh's plist-yaml-plist recipe from grahampugh's repo
+
+Identifier: com.github.discentem.VendorPlistYamlPlist
+
+MinimumVersion: '2.3'
+
+Input: {}
+
+Process:
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: grahampugh/plist-yaml-plist
+      destination_path: SharedProcessors/lib/plist_yaml_plist
+      folder_path: plistyamlplist_lib
+      commit_sha: 7756b7d8a5a699542e6d4fb034c595dd67ff4dcc

@@ -1,0 +1,28 @@
+# Downloaded from https://github.com/autopkg/peetinc-recipes/blob/4d5e1aab90f9de9799d471d2339a4371eeacda29/Cursor/Cursor.munki.recipe
+# Commit: 4d5e1aab90f9de9799d471d2339a4371eeacda29
+# Downloaded at: 2025-04-27 00:43:28 UTC
+
+Description: Downloads the latest version of Cursor and imports it into Munki.
+Identifier: com.github.discentem.com.github.peetinc.munki.Cursor
+Input:
+  MUNKI_CATEGORY: Developer
+  MUNKI_REPO_SUBDIR: apps/%NAME%
+  NAME: Cursor
+  pkginfo:
+    catalogs:
+    - testing
+    category: '%MUNKI_CATEGORY%'
+    description: Built to make you extraordinarily productive, Cursor is the best way to code with AI.
+    developer: Anysphere, Inc.
+    display_name: Cursor
+    icon_name: '%NAME%.png'
+    name: '%NAME%'
+    unattended_install: true
+    unattended_uninstall: true
+MinimumVersion: '2.3'
+ParentRecipe: com.github.peetinc.download.Cursor
+Process:
+- Arguments:
+    pkg_path: '%pathname%'
+    repo_subdirectory: '%MUNKI_REPO_SUBDIR%'
+  Processor: MunkiImporter
