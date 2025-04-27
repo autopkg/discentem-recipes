@@ -14,4 +14,6 @@ Process:
       destination_path: Cursor
       folder_path: Cursor
       commit_sha: 4d5e1aab90f9de9799d471d2339a4371eeacda29
-      convert_to_yaml: false
+      convert_to_yaml: true
+      new_identifier: com.github.peetinc.Cursor
+      fail_if_license_missing: true

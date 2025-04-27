@@ -1,9 +1,9 @@
 # Downloaded from https://github.com/autopkg/peetinc-recipes/blob/4d5e1aab90f9de9799d471d2339a4371eeacda29/Cursor/Cursor.download.recipe
 # Commit: 4d5e1aab90f9de9799d471d2339a4371eeacda29
-# Downloaded at: 2025-04-13 00:49:12 UTC
+# Downloaded at: 2025-05-02 02:37:47 UTC
 
 Description: Downloads the latest Universal version of Cursor.
-Identifier: com.github.peetinc.download.Cursor
+Identifier: com.github.peetinc.Cursor
 Input:
   NAME: Cursor
 MinimumVersion: '2.3'

@@ -1,9 +1,9 @@
 # Downloaded from https://github.com/autopkg/peetinc-recipes/blob/4d5e1aab90f9de9799d471d2339a4371eeacda29/Cursor/Cursor.munki.recipe
 # Commit: 4d5e1aab90f9de9799d471d2339a4371eeacda29
-# Downloaded at: 2025-04-13 00:49:12 UTC
+# Downloaded at: 2025-05-02 02:37:47 UTC
 
 Description: Downloads the latest version of Cursor and imports it into Munki.
-Identifier: com.github.peetinc.munki.Cursor
+Identifier: com.github.peetinc.Cursor
 Input:
   MUNKI_CATEGORY: Developer
   MUNKI_REPO_SUBDIR: apps/%NAME%
