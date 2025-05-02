@@ -14,5 +14,10 @@ Process:
       destination_path: Cursor
       folder_path: Cursor
       commit_sha: 4d5e1aab90f9de9799d471d2339a4371eeacda29
+<<<<<<< dest:   0f98a18c425e - kurtz: Merge pull request #17 from autopkg/pr17
       convert_to_yaml: false
-      identifier_prefix: com.github.discentem
+      identifier_prefix: com.github.discentem||||||| base:   aa47f4cbf258 - kurtz: actually add yaml conversion files
+      convert_to_yaml: false=======
+      convert_to_yaml: true
+      new_identifier: com.github.peetinc.Cursor
+      fail_if_license_missing: true>>>>>>> source: 2c0359b03fd1 - kurtz: force new name and identifier when vend...

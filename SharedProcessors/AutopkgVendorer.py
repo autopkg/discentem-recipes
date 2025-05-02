@@ -6,13 +6,13 @@ import datetime
 import sys
 from io import BytesIO
 import typing
+from plistlib import dumps as plist_dumps
 
 lib_path = os.path.join(os.path.dirname(__file__), "lib")
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
 from plist_yaml_plist.plist_yaml import plist_yaml_from_dict
-
 from autopkglib import Processor, ProcessorError
 from autopkglib.github import GitHubSession
 from plistlib import loads as plist_loads
@@ -20,129 +20,121 @@ from plistlib import loads as plist_loads
 __all__ = ["AutopkgVendorer"]
 
 class AutopkgVendorer(Processor):
-    """Downloads all text files in a specific folder (recursively) from a GitHub repo at a specific commit,
-    and prepends a comment header with download metadata."""
-
     description = __doc__
 
     input_variables = {
-        "github_repo": {
-            "required": True,
-            "description": "GitHub repository in the form 'owner/repo'",
-        },
-        "folder_path": {
-            "required": True,
-            "description": "Path to the folder inside the repo you want to download",
-        },
-        "commit_sha": {
-            "required": True,
-            "description": "Specific commit SHA to pin the download to",
-        },
-        "destination_path": {
-            "required": False,
-            "description": "Directory where files should be downloaded (defaults to a temp dir)",
-        },
-        "github_token": {
-            "required": False,
-            "description": "GitHub token for private repos or to increase rate limits",
-        },
-        "comment_style": {
-            "required": False,
-            "description": "Override comment style: 'yaml' or 'xml'. Default is based on file extension.",
-        },
-        "convert_to_yaml": {
-            "required": False,
-            "description": "Whether to convert plist or recipe files to YAML. Defaults to True.",
-        },
-        "identifier_prefix": {
-            "required": True,
-            "description": "Prefix to use for the Identifier in the vendored recipe.",
-        },
+        "github_repo": {"required": True, "description": "GitHub repository (owner/repo)"},
+        "folder_path": {"required": True, "description": "Folder or file inside repo to download"},
+        "commit_sha": {"required": True, "description": "Commit SHA to download from"},
+        "destination_path": {"required": False, "description": "Directory to save files"},
+        "github_token": {"required": False, "description": "GitHub token for auth/rate limit"},
+        "comment_style": {"required": False, "description": "Force comment style: 'yaml' or 'xml'"},
+        "convert_to_yaml": {"required": False, "description": "Convert plist/recipe to YAML (default True)"},
+        "new_identifier": {"required": True, "description": "Override Identifier entirely"},
+        "new_name": {"required": False, "description": "Override Name in the recipe, if present"},
+        "fail_if_license_missing": {"required": False, "description": "Fail if LICENSE file not found"},
     }
 
     output_variables = {
-        "downloaded_folder_path": {
-            "description": "Path to the downloaded folder",
-        }
+        "downloaded_folder_path": {"description": "Path to downloaded folder"},
+        "autopkg_vendorer_summary_result": {
+            "description": "Summary of the vendoring process",
+            "required": False,
+        },
     }
 
-    def download_text_file_at_commit_raw(self, session, repo, path, commit_sha):
-        """Downloads a text file from a repo at a specific commit SHA."""
+    def download_text_file(self, session, repo, path, commit_sha):
         raw_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
-
-        temp_file_path = tempfile.mktemp()
-        curl_cmd = [
-            "/usr/bin/curl",
-            "--location",
-            "--silent",
-            "--fail",
-            "--output", temp_file_path,
-            raw_url
-        ]
+        temp_file = tempfile.mktemp()
+        curl_cmd = ["/usr/bin/curl", "--location", "--silent", "--fail", "--output", temp_file, raw_url]
 
         try:
             session.download_with_curl(curl_cmd)
-            with open(temp_file_path, "r", encoding="utf-8") as f:
+            with open(temp_file, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
             raise ProcessorError(f"Failed to download {path} at {commit_sha}: {e}")
 
-    def generate_comment_header(self, repo, path, commit_sha, comment_style=None):
-        """Generates a comment block to prepend to the file."""
+    def check_root_for_license(self, session, repo, commit_sha):
+        endpoint = f"/repos/{repo}/contents"
+        query = f"ref={commit_sha}"
+        response_json, status = session.call_api(endpoint, query=query)
+        if status != 200 or not isinstance(response_json, list):
+            raise ProcessorError(f"GitHub API error while checking for LICENSE in root: {status}")
+        return any(item.get("type") == "file" and item.get("name", "").lower() == "license" for item in response_json)
+
+    def generate_comment_header(self, repo, path, commit_sha, style):
         timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
         github_url = f"https://github.com/{repo}/blob/{commit_sha}/{path}"
 
-        if comment_style:
-            style = comment_style.lower()
-        elif path.endswith((".recipe", ".xml")):
-            style = "xml"
-        else:
-            style = "yaml"
-
         if style == "xml":
-            return (
-                f"<!--\n"
-                f"Downloaded from {github_url}\n"
-                f"Commit: {commit_sha}\n"
-                f"Downloaded at: {timestamp}\n"
-                f"-->\n\n"
-            )
+            return f"<!--\nDownloaded from {github_url}\nCommit: {commit_sha}\nDownloaded at: {timestamp}\n-->\n\n"
         elif style == "yaml":
-            return (
-                f"# Downloaded from {github_url}\n"
-                f"# Commit: {commit_sha}\n"
-                f"# Downloaded at: {timestamp}\n\n"
-            )
+            return f"# Downloaded from {github_url}\n# Commit: {commit_sha}\n# Downloaded at: {timestamp}\n\n"
         else:
-            raise ProcessorError(f"Invalid comment_style: '{style}'. Must be 'yaml' or 'xml'.")
+            raise ProcessorError(f"Invalid comment style: {style}")
 
-    def insert_comment_header(self, header: str, content: str, comment_style: str) -> str:
-        if comment_style == "xml":
+    def insert_comment(self, header, content, style):
+        if style == "xml":
             lines = content.splitlines(keepends=True)
             if len(lines) >= 3:
                 return ''.join(lines[:3]) + header + ''.join(lines[3:])
-            return header + content
         return header + content
 
-    def convert_to_yaml(self, content: str, fn_edit_in_place: typing.Callable = None) -> str:
-        """Convert a string plist to YAML format."""
-        try:
-            plist_data = plist_loads(content.encode("utf-8"))
-            if fn_edit_in_place:
-                plist_data = fn_edit_in_place(plist_data)
-            return plist_yaml_from_dict(plist_data)
-        except Exception as e:
-            raise ProcessorError(f"Failed to convert to YAML: {e}")
+    def modify_identifier_and_name(self, plist_data, new_identifier=None, new_name=None):
+        if "Identifier" not in plist_data:
+            raise ProcessorError("No Identifier found in recipe.")
+        if not new_identifier:
+            raise ProcessorError("No new identifier provided.")
+        plist_data["Identifier"] = new_identifier
+        if new_name:
+            plist_data["Name"] = new_name
+        return plist_data
 
-    def vendor_recipe_content(self, session, repo, path, commit_sha, dest_base, identifier_prefix, rel_base="", convert_to_yaml=False):
+    def is_license_file(self, item_name):
+        return item_name.lower() == "license"
+
+    def process_file(self, session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml, new_identifier, new_name) -> str:
+        file_contents = self.download_text_file(session, repo, item_path, commit_sha)
+
+        if item_name.endswith(('.recipe')):
+            plist_data = plist_loads(file_contents.encode("utf-8"))
+            plist_data = dict(plist_data)  # convert to plain dict to avoid internal dict issues
+            plist_data = self.modify_identifier_and_name(plist_data, new_identifier, new_name)
+
+            if convert_to_yaml:
+                header = self.generate_comment_header(repo, item_path, commit_sha, "yaml")
+                modified_yaml = plist_yaml_from_dict(plist_data)
+                full_contents = header + modified_yaml
+                dest_path = dest_path.replace(".recipe", ".recipe.yaml")
+            else:
+                updated_plist_str = plist_dumps(plist_data).decode("utf-8")
+                header = self.generate_comment_header(repo, item_path, commit_sha, "xml")
+                full_contents = self.insert_comment(header, updated_plist_str, "xml")
+        else:
+            style = self.env.get("comment_style", "yaml")
+            header = self.generate_comment_header(repo, item_path, commit_sha, style)
+            full_contents = self.insert_comment(header, file_contents, style)
+
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        with open(dest_path, "w", encoding="utf-8") as f:
+            f.write(full_contents)
+        self.output(f"Downloaded: {item_path} → {dest_path}")
+        return dest_path
+
+    def vendor_path(self, session, repo, path, commit_sha, dest_base, rel_base="", convert_to_yaml=False, new_identifier=None, new_name=None):
         endpoint = f"/repos/{repo}/contents/{path}"
         query = f"ref={commit_sha}"
 
         response_json, status = session.call_api(endpoint, query=query)
-        if status != 200 or not isinstance(response_json, list):
-            raise ProcessorError(f"GitHub API error: status {status} for path '{path}'")
+        if status != 200:
+            raise ProcessorError(f"GitHub API error: {status} for path {path}")
 
-        for item in response_json:
+        items = response_json if isinstance(response_json, list) else [response_json]
+
+        vendorer_paths = []
+
+        for item in items:
             item_type = item.get("type")
             item_path = item.get("path")
             item_name = item.get("name")
@@ -150,76 +142,54 @@ class AutopkgVendorer(Processor):
             dest_path = os.path.join(dest_base, rel_path)
 
             if item_type == "dir":
-                self.download_folder_recursive(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml)
+                self.vendor_path(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml, new_identifier, new_name)
             elif item_type == "file":
-                file_contents = self.download_text_file_at_commit_raw(session, repo, item_path, commit_sha)
-
-                if item_name.endswith((".plist", ".recipe")) and convert_to_yaml:
-                    header = self.generate_comment_header(repo, item_path, commit_sha, comment_style="yaml")
-                    def change_recipe_identifier(plist_data):
-                        # Change the identifier to match the new path
-                        if isinstance(plist_data, dict):
-                            pdata = plist_data.copy()
-                            if "Identifier" not in plist_data:
-                                raise ProcessorError(f"No Identifier found in {path}")
-                            original_identifier = plist_data["Identifier"]
-                            pdata["Identifier"] = f"{identifier_prefix}.{original_identifier}"
-                        return pdata
-                    yaml_body = self.convert_to_yaml(
-                        file_contents,
-                        fn_edit_in_place=change_recipe_identifier
-                        )
-                    full_contents = header + yaml_body
-                    comment_style = "yaml"
-                    dest_path = dest_path.replace(".recipe", ".recipe.yaml")
-                else:
-                    comment_style = "xml"
-                    header = self.generate_comment_header(repo, item_path, commit_sha, comment_style)
-                    full_contents = self.insert_comment_header(header, file_contents, comment_style)
-
-                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                with open(dest_path, "w", encoding="utf-8") as f:
-                    f.write(full_contents)
-
-                self.output(f"Downloaded: {item_path} → {dest_path}")
+                vendorer_paths.append(
+                    self.process_file(session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml, new_identifier, new_name)
+                )
             else:
                 self.output(f"Skipping unknown type '{item_type}' at {item_path}")
+
+        return vendorer_paths
 
     def main(self):
         repo = self.env["github_repo"]
         folder_path = self.env["folder_path"]
         commit_sha = self.env["commit_sha"]
         github_token = self.env.get("github_token")
+        destination_path = self.env.get("destination_path") or tempfile.mkdtemp(prefix="github_folder_")
         convert_to_yaml = self.env.get("convert_to_yaml", True)
-        identifier_prefix = self.env.get("identifier_prefix", None)
-        if not identifier_prefix:
-            raise ProcessorError("identifier_prefix is required")
+        new_identifier = self.env.get("new_identifier")
+        new_name = self.env.get("new_name")
 
-        destination_path = self.env.get("destination_path")
-        if not destination_path:
-            destination_path = tempfile.mkdtemp(prefix="github_folder_")
-        else:
-            os.makedirs(destination_path, exist_ok=True)
-
+        os.makedirs(destination_path, exist_ok=True)
         gh_session = GitHubSession(github_token)
 
-        try:
-            self.vendor_recipe_content(
-                session=gh_session,
-                repo=repo,
-                path=folder_path,
-                commit_sha=commit_sha,
-                dest_base=destination_path,
-                rel_base="",
-                convert_to_yaml=convert_to_yaml,
-                identifier_prefix=identifier_prefix,
-            )
-        except Exception as e:
-            raise ProcessorError(f"Failed to download folder from GitHub: {e}")
+        license_found = self.check_root_for_license(gh_session, repo, commit_sha)
+        if self.env.get("fail_if_license_missing") and not license_found:
+            raise ProcessorError("LICENSE file not found in the root of the repository.")
+
+        vendored_paths = self.vendor_path(
+            session=gh_session,
+            repo=repo,
+            path=folder_path,
+            commit_sha=commit_sha,
+            dest_base=destination_path,
+            convert_to_yaml=convert_to_yaml,
+            new_identifier=new_identifier,
+            new_name=new_name,
+        )
 
         self.env["downloaded_folder_path"] = destination_path
-        self.output(f"All files downloaded to: {destination_path}")
+        self.output(f"Downloaded folder available at: {destination_path}")
 
+        self.env["autopkg_vendorer_summary_result"] = {
+            "summary_text": "Files downloaded and vendored successfully.",
+            "report_fields": ["Vendored Recipes"],
+            "data": {
+                "Vendored Recipes": "\n".join(vendored_paths),
+            }
+        }
 
 if __name__ == "__main__":
     processor = AutopkgVendorer()
