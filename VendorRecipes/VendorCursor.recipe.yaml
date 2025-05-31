@@ -8,7 +8,6 @@ Input: {}
 
 Process:
   - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
-    # Vendor Cursor Recipe
     Arguments:
       github_repo: autopkg/peetinc-recipes
       destination_path: Cursor

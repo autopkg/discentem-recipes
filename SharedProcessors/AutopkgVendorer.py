@@ -32,7 +32,11 @@ class AutopkgVendorer(Processor):
         "github_token": {"required": False, "description": "GitHub token for auth/rate limit"},
         "comment_style": {"required": False, "description": "Force comment style: 'yaml' or 'xml'"},
         "convert_to_yaml": {"required": False, "description": "Convert plist/recipe to YAML (default True)"},
-        "required_license": {"required": True, "description": "Required license type"},
+        "required_license": {"required": False, "description": "Required license type"},
+        "opinionated_ordering": {
+            "required": False,
+            "description": "Use opinionated ordering for recipe keys (default True)",
+        },
     }
 
     output_variables = {
@@ -80,6 +84,7 @@ class AutopkgVendorer(Processor):
     def generate_comment_header(self, repo, path, commit_sha, style: CommentStyle) -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         github_url = f"https://github.com/{repo}/blob/{commit_sha}/{path}"
+        style = self.CommentStyle(style.lower()) if isinstance(style, str) else style
 
         if style == self.CommentStyle.XML:
             return f"<!--\nDownloaded from {github_url}\nCommit: {commit_sha}\nDownloaded at: {timestamp}\n-->\n\n"
@@ -98,18 +103,20 @@ class AutopkgVendorer(Processor):
     def is_license_file(self, item_name):
         return item_name.lower() == "license"
 
-    def process_file(self, session, repo, item_path: str, item_name: str, commit_sha: str, dest_path: str, convert_to_yaml: bool = False):
+    def process_file(self, session, repo, item_path: str, item_name: str, commit_sha: str, dest_path: str, convert_to_yaml: bool = False, opinionated_ordering: bool = True):
         file_contents = self.download_text_file(session, repo, item_path, commit_sha)
+        self.output(f"Downloaded: {item_path} → {dest_path}")
 
         if item_name.endswith(('.recipe')):
             plist_data = plist_loads(file_contents.encode("utf-8"))
             plist_data = dict(plist_data)
 
-            for step_index, step in enumerate(plist_data.get('Process', [])):
-                reordered_step = self.move_keys_to_top(step, ['Processor', 'Arguments'])
-                plist_data['Process'][step_index] = reordered_step
+            if opinionated_ordering:
+                for step_index, step in enumerate(plist_data.get('Process', [])):
+                    reordered_step = self.move_keys_to_top(step, ['Processor', 'Arguments'])
+                    plist_data['Process'][step_index] = reordered_step
 
-            self.output(f"Reordered recipe: {item_path}")
+                self.output(f"Reordered recipe: {item_path}")
 
             if convert_to_yaml:
                 header = self.generate_comment_header(repo, item_path, commit_sha, self.CommentStyle.YAML)
@@ -129,10 +136,7 @@ class AutopkgVendorer(Processor):
         with open(dest_path, "w", encoding="utf-8") as f:
             f.write(full_contents)
 
-        self.output(f"Downloaded: {item_path} → {dest_path}")
-
-
-    def vendor_path(self, session, repo: str, path: str, commit_sha: str, dest_base, rel_base="", convert_to_yaml=False):
+    def vendor_path(self, session, repo: str, path: str, commit_sha: str, dest_base, rel_base="", convert_to_yaml=False, opinionated_ordering=True):
         endpoint = f"/repos/{repo}/contents/{path}"
         query = f"ref={commit_sha}"
 
@@ -154,7 +158,7 @@ class AutopkgVendorer(Processor):
             if item_type == "dir":
                 self.vendor_path(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml)
             elif item_type == "file":
-                self.process_file(session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml)
+                self.process_file(session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml, opinionated_ordering=opinionated_ordering)
                 vendorer_paths.append(dest_path)
             else:
                 self.output(f"Skipping unknown type '{item_type}' at {item_path}")
@@ -168,14 +172,17 @@ class AutopkgVendorer(Processor):
         github_token = self.env.get("github_token")
         destination_path = self.env.get("destination_path") or tempfile.mkdtemp(prefix="github_folder_")
         convert_to_yaml = self.env.get("convert_to_yaml", True)
-        required_license = self.env.get("required_license")
+        required_license = self.env.get("required_license", None)
+        opinionated_ordering = self.env.get("opinionated_ordering", True)
+
 
         os.makedirs(destination_path, exist_ok=True)
         gh_session = GitHubSession(github_token)
 
-        found_license = self.license_type(gh_session, repo, commit_sha)
-        if not found_license == required_license:
-            raise ProcessorError(f"Input variable license_type ({required_license}) does not match the found license ({found_license}).")
+        if required_license:
+            found_license = self.license_type(gh_session, repo, commit_sha)
+            if not found_license == required_license:
+                raise ProcessorError(f"Input variable license_type ({required_license}) does not match the found license ({found_license}).")
 
         vendored_paths = self.vendor_path(
             session=gh_session,
@@ -184,6 +191,7 @@ class AutopkgVendorer(Processor):
             commit_sha=commit_sha,
             dest_base=destination_path,
             convert_to_yaml=convert_to_yaml,
+            opinionated_ordering=opinionated_ordering,
         )
 
         self.env["downloaded_folder_path"] = destination_path
