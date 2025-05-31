@@ -67,27 +67,19 @@ def represent_ordereddict(dumper, data):
 
 
 def normalize_types(input_data):
-    """This allows YAML and JSON to store Data fields as strings.
-
-    However, this operation is irreversible. Only use if read-only
-    access to the plist is required.
-    """
+    """This allows YAML and JSON to store Data fields as strings while preserving order."""
     if sys.version_info.major == 3 and isinstance(input_data, bytes):
         return input_data
     if sys.version_info.major == 2 and isinstance(input_data, Data):
         return input_data.data
     if isinstance(input_data, list):
-        retval = []
-        for child in input_data:
-            retval.append(normalize_types(child))
-        return retval
+        return [normalize_types(child) for child in input_data]
     if isinstance(input_data, dict):
-        retval = {}
+        retval = OrderedDict()
         for key in input_data:
             retval[key] = normalize_types(input_data[key])
         return retval
     return input_data
-
 
 def convert(xml):
     """Do the conversion."""

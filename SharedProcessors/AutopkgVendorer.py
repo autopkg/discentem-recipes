@@ -2,10 +2,12 @@ from __future__ import absolute_import
 
 import os
 import tempfile
-import datetime
+from datetime import datetime, timezone
 import sys
 from io import BytesIO
 import typing
+from collections import OrderedDict
+import enum
 from plistlib import dumps as plist_dumps
 
 lib_path = os.path.join(os.path.dirname(__file__), "lib")
@@ -40,8 +42,18 @@ class AutopkgVendorer(Processor):
             "required": False,
         },
     }
+    def move_keys_to_top(self, d: dict, first_keys: list[str]) -> OrderedDict:
+        """Reorder dictionary `d` so that keys in `first_keys` appear first, in that order."""
+        od = OrderedDict()
+        for key in first_keys:
+            if key in d:
+                od[key] = d[key]
+        for key, value in d.items():
+            if key not in od:
+                od[key] = value
+        return od
 
-    def download_text_file(self, session, repo, path, commit_sha):
+    def download_text_file(self, session, repo: str, path: str, commit_sha: str) -> str:
         raw_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
         temp_file = tempfile.mktemp()
         curl_cmd = ["/usr/bin/curl", "--location", "--silent", "--fail", "--output", temp_file, raw_url]
@@ -53,7 +65,7 @@ class AutopkgVendorer(Processor):
         except Exception as e:
             raise ProcessorError(f"Failed to download {path} at {commit_sha}: {e}")
 
-    def license_type(self, session, repo, commit_sha):
+    def license_type(self, session, repo: str, commit_sha: str) -> typing.Optional[str]:
         endpoint = f"/repos/{repo}/license"
         query = f"ref={commit_sha}"
         response_json, status = session.call_api(endpoint, query=query)
@@ -61,19 +73,23 @@ class AutopkgVendorer(Processor):
             raise ProcessorError(f"GitHub API error while checking for LICENSE in root: {status}")
         return response_json["license"].get("spdx_id")
 
-    def generate_comment_header(self, repo, path, commit_sha, style):
-        timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    class CommentStyle(enum.Enum):
+        YAML = "yaml"
+        XML = "xml"
+
+    def generate_comment_header(self, repo, path, commit_sha, style: CommentStyle) -> str:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         github_url = f"https://github.com/{repo}/blob/{commit_sha}/{path}"
 
-        if style == "xml":
+        if style == self.CommentStyle.XML:
             return f"<!--\nDownloaded from {github_url}\nCommit: {commit_sha}\nDownloaded at: {timestamp}\n-->\n\n"
-        elif style == "yaml":
+        elif style == self.CommentStyle.YAML:
             return f"# Downloaded from {github_url}\n# Commit: {commit_sha}\n# Downloaded at: {timestamp}\n\n"
         else:
             raise ProcessorError(f"Invalid comment style: {style}")
 
-    def insert_comment(self, header, content, style):
-        if style == "xml":
+    def insert_comment(self, header, content, style: CommentStyle) -> str:
+        if style == self.CommentStyle.XML:
             lines = content.splitlines(keepends=True)
             if len(lines) >= 3:
                 return ''.join(lines[:3]) + header + ''.join(lines[3:])
@@ -82,22 +98,28 @@ class AutopkgVendorer(Processor):
     def is_license_file(self, item_name):
         return item_name.lower() == "license"
 
-    def process_file(self, session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml):
+    def process_file(self, session, repo, item_path: str, item_name: str, commit_sha: str, dest_path: str, convert_to_yaml: bool = False):
         file_contents = self.download_text_file(session, repo, item_path, commit_sha)
 
         if item_name.endswith(('.recipe')):
             plist_data = plist_loads(file_contents.encode("utf-8"))
-            plist_data = dict(plist_data)  # convert to plain dict to avoid internal dict issues
+            plist_data = dict(plist_data)
+
+            for step_index, step in enumerate(plist_data.get('Process', [])):
+                reordered_step = self.move_keys_to_top(step, ['Processor', 'Arguments'])
+                plist_data['Process'][step_index] = reordered_step
+
+            self.output(f"Reordered recipe: {item_path}")
 
             if convert_to_yaml:
-                header = self.generate_comment_header(repo, item_path, commit_sha, "yaml")
+                header = self.generate_comment_header(repo, item_path, commit_sha, self.CommentStyle.YAML)
                 modified_yaml = plist_yaml_from_dict(plist_data)
                 full_contents = header + modified_yaml
                 dest_path = dest_path.replace(".recipe", ".recipe.yaml")
             else:
-                updated_plist_str = plist_dumps(plist_data).decode("utf-8")
-                header = self.generate_comment_header(repo, item_path, commit_sha, "xml")
-                full_contents = self.insert_comment(header, updated_plist_str, "xml")
+                updated_plist_str = plist_dumps(plist_data, sort_keys=False).decode("utf-8")
+                header = self.generate_comment_header(repo, item_path, commit_sha, self.CommentStyle.XML)
+                full_contents = self.insert_comment(header, updated_plist_str, self.CommentStyle.XML)
         else:
             style = self.env.get("comment_style", "yaml")
             header = self.generate_comment_header(repo, item_path, commit_sha, style)
@@ -106,9 +128,11 @@ class AutopkgVendorer(Processor):
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         with open(dest_path, "w", encoding="utf-8") as f:
             f.write(full_contents)
+
         self.output(f"Downloaded: {item_path} → {dest_path}")
 
-    def vendor_path(self, session, repo, path, commit_sha, dest_base, rel_base="", convert_to_yaml=False):
+
+    def vendor_path(self, session, repo: str, path: str, commit_sha: str, dest_base, rel_base="", convert_to_yaml=False):
         endpoint = f"/repos/{repo}/contents/{path}"
         query = f"ref={commit_sha}"
 

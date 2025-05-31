@@ -1,6 +1,6 @@
 # Downloaded from https://github.com/autopkg/peetinc-recipes/blob/4d5e1aab90f9de9799d471d2339a4371eeacda29/Cursor/Cursor.download.recipe
 # Commit: 4d5e1aab90f9de9799d471d2339a4371eeacda29
-# Downloaded at: 2025-05-31 19:38:21 UTC
+# Downloaded at: 2025-05-31 21:04:59 UTC
 
 Description: Downloads the latest Universal version of Cursor.
 Identifier: com.github.peetinc.download.Cursor
@@ -8,20 +8,20 @@ Input:
   NAME: Cursor
 MinimumVersion: '2.3'
 Process:
-- Arguments:
+- Processor: URLTextSearcher
+  Arguments:
     re_pattern: '"downloadUrl":"(https[^"]+)"'
     url: https://www.cursor.com/api/download?platform=darwin-universal&releaseTrack=stable
-  Processor: URLTextSearcher
-- Arguments:
+- Processor: URLDownloader
+  Arguments:
     filename: '%NAME%.dmg'
     url: '%match%'
-  Processor: URLDownloader
 - Processor: EndOfCheckPhase
-- Arguments:
+- Processor: CodeSignatureVerifier
+  Arguments:
     input_path: '%pathname%/Cursor.app'
     requirement: identifier "com.todesktop.230313mzl4w4u92" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = VDXQ22DGB9
-  Processor: CodeSignatureVerifier
-- Arguments:
+- Processor: Versioner
+  Arguments:
     input_plist_path: '%pathname%/Cursor.app/Contents/Info.plist'
     plist_version_key: CFBundleShortVersionString
-  Processor: Versioner
