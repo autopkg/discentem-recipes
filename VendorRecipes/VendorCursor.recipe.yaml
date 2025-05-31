@@ -16,4 +16,4 @@ Process:
       commit_sha: 4d5e1aab90f9de9799d471d2339a4371eeacda29
       convert_to_yaml: true
       new_identifier: com.github.discentem.VendoredCursor
-      fail_if_license_missing: true
+      required_license: Apache-2.0

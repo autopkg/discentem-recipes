@@ -30,9 +30,7 @@ class AutopkgVendorer(Processor):
         "github_token": {"required": False, "description": "GitHub token for auth/rate limit"},
         "comment_style": {"required": False, "description": "Force comment style: 'yaml' or 'xml'"},
         "convert_to_yaml": {"required": False, "description": "Convert plist/recipe to YAML (default True)"},
-        "new_identifier": {"required": True, "description": "Override Identifier entirely"},
-        "new_name": {"required": False, "description": "Override Name in the recipe, if present"},
-        "fail_if_license_missing": {"required": False, "description": "Fail if LICENSE file not found"},
+        "required_license": {"required": True, "description": "Required license type"},
     }
 
     output_variables = {
@@ -55,13 +53,13 @@ class AutopkgVendorer(Processor):
         except Exception as e:
             raise ProcessorError(f"Failed to download {path} at {commit_sha}: {e}")
 
-    def check_root_for_license(self, session, repo, commit_sha):
-        endpoint = f"/repos/{repo}/contents"
+    def license_type(self, session, repo, commit_sha):
+        endpoint = f"/repos/{repo}/license"
         query = f"ref={commit_sha}"
         response_json, status = session.call_api(endpoint, query=query)
-        if status != 200 or not isinstance(response_json, list):
+        if status != 200:
             raise ProcessorError(f"GitHub API error while checking for LICENSE in root: {status}")
-        return any(item.get("type") == "file" and item.get("name", "").lower() == "license" for item in response_json)
+        return response_json["license"].get("spdx_id")
 
     def generate_comment_header(self, repo, path, commit_sha, style):
         timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -81,26 +79,15 @@ class AutopkgVendorer(Processor):
                 return ''.join(lines[:3]) + header + ''.join(lines[3:])
         return header + content
 
-    def modify_identifier_and_name(self, plist_data, new_identifier=None, new_name=None):
-        if "Identifier" not in plist_data:
-            raise ProcessorError("No Identifier found in recipe.")
-        if not new_identifier:
-            raise ProcessorError("No new identifier provided.")
-        plist_data["Identifier"] = new_identifier
-        if new_name:
-            plist_data["Name"] = new_name
-        return plist_data
-
     def is_license_file(self, item_name):
         return item_name.lower() == "license"
 
-    def process_file(self, session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml, new_identifier, new_name):
+    def process_file(self, session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml):
         file_contents = self.download_text_file(session, repo, item_path, commit_sha)
 
         if item_name.endswith(('.recipe')):
             plist_data = plist_loads(file_contents.encode("utf-8"))
             plist_data = dict(plist_data)  # convert to plain dict to avoid internal dict issues
-            plist_data = self.modify_identifier_and_name(plist_data, new_identifier, new_name)
 
             if convert_to_yaml:
                 header = self.generate_comment_header(repo, item_path, commit_sha, "yaml")
@@ -121,7 +108,7 @@ class AutopkgVendorer(Processor):
             f.write(full_contents)
         self.output(f"Downloaded: {item_path} → {dest_path}")
 
-    def vendor_path(self, session, repo, path, commit_sha, dest_base, rel_base="", convert_to_yaml=False, new_identifier=None, new_name=None):
+    def vendor_path(self, session, repo, path, commit_sha, dest_base, rel_base="", convert_to_yaml=False):
         endpoint = f"/repos/{repo}/contents/{path}"
         query = f"ref={commit_sha}"
 
@@ -141,9 +128,9 @@ class AutopkgVendorer(Processor):
             dest_path = os.path.join(dest_base, rel_path)
 
             if item_type == "dir":
-                self.vendor_path(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml, new_identifier, new_name)
+                self.vendor_path(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml)
             elif item_type == "file":
-                self.process_file(session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml, new_identifier, new_name)
+                self.process_file(session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml)
                 vendorer_paths.append(dest_path)
             else:
                 self.output(f"Skipping unknown type '{item_type}' at {item_path}")
@@ -157,15 +144,14 @@ class AutopkgVendorer(Processor):
         github_token = self.env.get("github_token")
         destination_path = self.env.get("destination_path") or tempfile.mkdtemp(prefix="github_folder_")
         convert_to_yaml = self.env.get("convert_to_yaml", True)
-        new_identifier = self.env.get("new_identifier")
-        new_name = self.env.get("new_name")
+        required_license = self.env.get("required_license")
 
         os.makedirs(destination_path, exist_ok=True)
         gh_session = GitHubSession(github_token)
 
-        license_found = self.check_root_for_license(gh_session, repo, commit_sha)
-        if self.env.get("fail_if_license_missing") and not license_found:
-            raise ProcessorError("LICENSE file not found in the root of the repository.")
+        found_license = self.license_type(gh_session, repo, commit_sha)
+        if not found_license == required_license:
+            raise ProcessorError(f"Input variable license_type ({required_license}) does not match the found license ({found_license}).")
 
         vendored_paths = self.vendor_path(
             session=gh_session,
@@ -174,8 +160,6 @@ class AutopkgVendorer(Processor):
             commit_sha=commit_sha,
             dest_base=destination_path,
             convert_to_yaml=convert_to_yaml,
-            new_identifier=new_identifier,
-            new_name=new_name,
         )
 
         self.env["downloaded_folder_path"] = destination_path
