@@ -8,15 +8,15 @@ Input:
   NAME: Cursor
 MinimumVersion: '2.3'
 Process:
-- Processor: URLTextSearcher
+- Processor: com.github.discentem.SharedProcessors/GetRemoteJsonKey
   Arguments:
-    re_pattern: '"downloadUrl":"(https[^"]+)"'
     url: https://www.cursor.com/api/download?platform=darwin-universal&releaseTrack=stable
+    key: downloadUrl
+    output_variable: final_url
 - Processor: URLDownloader
   Arguments:
     filename: '%NAME%.dmg'
-    url: '%match%'
-- Processor: EndOfCheckPhase
+    url: '%final_url%'
 - Processor: CodeSignatureVerifier
   Arguments:
     input_path: '%pathname%/Cursor.app'
