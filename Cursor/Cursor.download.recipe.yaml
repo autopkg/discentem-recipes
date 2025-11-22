@@ -17,6 +17,7 @@ Process:
   Arguments:
     filename: '%NAME%.dmg'
     url: '%final_url%'
+- Processor: EndOfCheckPhase
 - Processor: CodeSignatureVerifier
   Arguments:
     input_path: '%pathname%/Cursor.app'
