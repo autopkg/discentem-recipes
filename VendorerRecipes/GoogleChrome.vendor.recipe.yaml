@@ -1,0 +1,19 @@
+Description: Obtain upstream Google Chrome recipe from autopkg/recipes
+
+Identifier: com.github.discentem.VendoredGoogleChrome
+
+MinimumVersion: '3.0'
+
+Input: {}
+
+Process:
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: autopkg/recipes
+      destination_path: GoogleChrome
+      assets:
+        - GoogleChrome/GoogleChrome.download.recipe
+        - GoogleChrome/GoogleChrome.munki.recipe
+      commit_sha: 04191671ac09b68667351b615b4eecd11b6de8c8
+      convert_to_yaml: true
+      required_license: Apache-2.0

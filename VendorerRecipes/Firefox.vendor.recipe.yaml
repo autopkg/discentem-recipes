@@ -1,0 +1,29 @@
+Description: Obtain upstream Firefox recipe from autopkg/recipes
+
+Identifier: com.github.discentem.VendoredFirefox
+
+MinimumVersion: '3.0'
+
+Input: {}
+Process:
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: autopkg/recipes # There's Firefox recipes available in github.com/autopkg/recipes
+      destination_path: Mozilla # We want to put it in Mozilla/
+      assets: # We want to get both the download and Munki recipe
+        - Mozilla/Firefox.download.recipe
+        - Mozilla/Firefox.munki.recipe
+        - Mozilla/FirefoxSignedPkg.pkg.recipe
+        - Mozilla/MozillaURLProvider.py
+      commit_sha: a501cf3dc4a6c72675b596dd2354602bd611fe3e
+      convert_to_yaml: true
+      required_license: Apache-2.0
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: autopkg/almenscorner-recipes
+      destination_path: Mozilla
+      assets:
+        - Mozilla/FirefoxSigned.intune.recipe
+      commit_sha: dfa713249f782ceca3c68847e676c5bb0071bda9
+      convert_to_yaml: true
+      required_license: Apache-2.0

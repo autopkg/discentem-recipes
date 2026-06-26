@@ -1,0 +1,28 @@
+Description: Obtain upstream Slack recipe from autopkg/recipes
+
+Identifier: com.github.discentem.VendoredSlack
+
+MinimumVersion: '3.0'
+
+Input: {}
+
+Process:
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: autopkg/kevinmcox-recipes
+      destination_path: Slack
+      assets:
+        - Slack/Slack-dmg.download.recipe
+        - Slack/Slack-dmg.munki.recipe
+      commit_sha: b0b887eb46a309b1c4d7084a8bdb6afe727c8344
+      convert_to_yaml: true
+      required_license: Apache-2.0
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: autopkg/almenscorner-recipes
+      destination_path: Slack
+      assets:
+        - Slack/Slack.intune.recipe
+      commit_sha: dfa713249f782ceca3c68847e676c5bb0071bda9
+      convert_to_yaml: true
+      required_license: Apache-2.0

@@ -1,0 +1,26 @@
+# Downloaded from https://github.com/autopkg/recipes/blob/a501cf3dc4a6c72675b596dd2354602bd611fe3e/Mozilla/Firefox.munki.recipe
+# Commit: a501cf3dc4a6c72675b596dd2354602bd611fe3e
+# Downloaded at: 2026-06-26 15:30:04 UTC
+
+Description: "Downloads Firefox disk image and imports into Munki.\nSome useful values for RELEASE are: 'latest', 'esr-latest', 'beta-latest'.\nLOCALE controls the language localization to be downloaded.\nExamples include 'en-US', 'de', 'sv-SE', and 'zh-TW'\nSee the following URLs for more info:\n    http://ftp.mozilla.org/pub/firefox/releases/latest/README.txt\n    http://ftp.mozilla.org/pub/firefox/releases/latest-esr/README.txt\n    http://ftp.mozilla.org/pub/firefox/releases/latest-beta/README.txt"
+Identifier: com.github.autopkg.munki.firefox-rc-en_US
+Input:
+  MUNKI_REPO_SUBDIR: apps/firefox
+  NAME: Firefox
+  pkginfo:
+    catalogs:
+    - testing
+    description: Mozilla Firefox is a free and open source web browser.
+    display_name: Mozilla Firefox
+    name: '%NAME%'
+    unattended_install: true
+MinimumVersion: '2.0'
+ParentRecipe: com.github.autopkg.download.firefox-rc-en_US
+Process:
+- Processor: MunkiImporter
+  Arguments:
+    pkg_path: '%pathname%'
+    repo_subdirectory: '%MUNKI_REPO_SUBDIR%'
+    additional_makepkginfo_options:
+    - --mode
+    - ug+w,o-w

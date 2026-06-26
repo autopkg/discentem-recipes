@@ -1,0 +1,47 @@
+# Downloaded from https://github.com/autopkg/almenscorner-recipes/blob/dfa713249f782ceca3c68847e676c5bb0071bda9/Mozilla/FirefoxSigned.intune.recipe
+# Commit: dfa713249f782ceca3c68847e676c5bb0071bda9
+# Downloaded at: 2026-06-26 15:30:05 UTC
+
+Description: Downloads the latest version of Firefox and imports it into Intune.
+Identifier: com.github.almenscorner.intune.FirefoxSigned
+Input:
+  NAME: Firefox
+  categories:
+  - Productivity
+  description: Mozilla Firefox is a free and open source web browser.
+  developer: Mozilla
+  display_name: Firefox
+MinimumVersion: 0.4.0
+ParentRecipe: com.github.autopkg.download.FirefoxSignedPkg
+Process:
+- Processor: FlatPkgUnpacker
+  Arguments:
+    destination_path: '%RECIPE_CACHE_DIR%/unpack'
+    flat_pkg_path: '%RECIPE_CACHE_DIR%/downloads/%filename%'
+- Processor: FileFinder
+  Arguments:
+    pattern: '%destination_path%/*.pkg'
+- Processor: PkgPayloadUnpacker
+  Arguments:
+    destination_path: '%destination_path%'
+    pkg_payload_path: '%destination_path%/%found_basename%/Payload'
+- Processor: PlistReader
+  Arguments:
+    info_path: '%destination_path%/%NAME%.app/Contents/Info.plist'
+    plist_keys:
+      CFBundleIdentifier: bundleID
+      CFBundleShortVersionString: version
+- Processor: com.github.almenscorner.intune-upload.processors/IntuneAppIconGetter
+  Arguments:
+    app_file: '%destination_path%/%NAME%.app'
+    name: '%NAME%'
+- Processor: com.github.almenscorner.intune-upload.processors/IntuneAppUploader
+  Arguments:
+    app_file: '%flat_pkg_path%'
+    bundleId: '%bundleID%'
+    bundleVersion: '%version%'
+    description: '%description%'
+    displayname: '%display_name%'
+    icon: '%icon_file_path%'
+    publisher: '%developer%'
+    version: '%version%'
