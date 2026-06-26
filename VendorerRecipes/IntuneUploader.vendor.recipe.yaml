@@ -1,0 +1,18 @@
+Description: Obtain upstream IntuneUploader recipe from autopkg/recipes
+
+Identifier: com.github.discentem.VendoredIntuneUploader
+
+MinimumVersion: '3.0'
+
+Input: {}
+
+Process:
+  - Processor: com.github.discentem.SharedProcessors/AutopkgVendorer
+    Arguments:
+      github_repo: almenscorner/intune-uploader
+      destination_path: SharedProcessors/IntuneUploader
+      assets:
+        - IntuneUploader/
+      commit_sha: 7240a41873e664eff733a8ac8ec8d2ebd3797afb
+      convert_to_yaml: true
+      required_license: Apache-2.0

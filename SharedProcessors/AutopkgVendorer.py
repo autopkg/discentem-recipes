@@ -1,20 +1,21 @@
 from __future__ import absolute_import
 
+import json
 import os
-import tempfile
-from datetime import datetime, timezone
+import subprocess
 import sys
-from io import BytesIO
+import tempfile
 import typing
+from datetime import datetime, timezone
 from collections import OrderedDict
 import enum
 from plistlib import dumps as plist_dumps
 
-lib_path = os.path.join(os.path.dirname(__file__), "lib")
-if lib_path not in sys.path:
-    sys.path.insert(0, lib_path)
+_here = os.path.dirname(os.path.abspath(__file__))
+if _here not in sys.path:
+    sys.path.insert(0, _here)
 
-from plist_yaml_plist.plist_yaml import plist_yaml_from_dict
+from lib.plist_yaml_plist.plist_yaml import plist_yaml_from_dict
 from autopkglib import Processor, ProcessorError
 from autopkglib.github import GitHubSession
 from plistlib import loads as plist_loads
@@ -26,7 +27,7 @@ class AutopkgVendorer(Processor):
 
     input_variables = {
         "github_repo": {"required": True, "description": "GitHub repository (owner/repo)"},
-        "folder_path": {"required": True, "description": "Folder or file inside repo to download"},
+        "assets": {"required": True, "description": "Folder path or list of file paths inside the repo to download"},
         "commit_sha": {"required": True, "description": "Commit SHA to download from"},
         "destination_path": {"required": True, "description": "Directory to save files"},
         "github_token": {"required": False, "description": "GitHub token for auth/rate limit"},
@@ -57,25 +58,80 @@ class AutopkgVendorer(Processor):
                 od[key] = value
         return od
 
+    def head_request(self, session, url: str) -> None:
+        temp_fd, temp_file = tempfile.mkstemp()
+        os.close(temp_fd)
+        curl_cmd = ["/usr/bin/curl", "--head", "--location", "--silent", "--fail", "--output", temp_file, url]
+        try:
+            session.download_with_curl(curl_cmd)
+        except Exception as e:
+            raise ProcessorError(f"HEAD request failed for {url}: {e}")
+        finally:
+            os.unlink(temp_file)
+
     def download_text_file(self, session, repo: str, path: str, commit_sha: str) -> str:
         raw_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
-        temp_file = tempfile.mktemp()
+        temp_fd, temp_file = tempfile.mkstemp()
+        os.close(temp_fd)
         curl_cmd = ["/usr/bin/curl", "--location", "--silent", "--fail", "--output", temp_file, raw_url]
-
         try:
+            self.head_request(session, raw_url)
             session.download_with_curl(curl_cmd)
             with open(temp_file, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
             raise ProcessorError(f"Failed to download {path} at {commit_sha}: {e}")
+        finally:
+            os.unlink(temp_file)
 
-    def license_type(self, session, repo: str, commit_sha: str) -> typing.Optional[str]:
+    def _check_license_api(self, session, repo: str, commit_sha: str) -> typing.Optional[str]:
         endpoint = f"/repos/{repo}/license"
         query = f"ref={commit_sha}"
         response_json, status = session.call_api(endpoint, query=query)
         if status != 200:
-            raise ProcessorError(f"GitHub API error while checking for LICENSE in root: {status}")
+            raise ProcessorError(f"GitHub API error {status} checking license for {repo}")
         return response_json["license"].get("spdx_id")
+
+    def _detect_spdx_id(self, content: str) -> typing.Optional[str]:
+        c = content.lower()
+        if "apache license" in c and "version 2.0" in c:
+            return "Apache-2.0"
+        if "mit license" in c or "permission is hereby granted, free of charge" in c:
+            return "MIT"
+        if "gnu general public license" in c:
+            if "version 3" in c:
+                return "GPL-3.0-only"
+            if "version 2" in c:
+                return "GPL-2.0-only"
+        if "gnu lesser general public license" in c:
+            if "version 3" in c:
+                return "LGPL-3.0-only"
+            if "version 2.1" in c:
+                return "LGPL-2.1-only"
+        if "mozilla public license" in c and "version 2.0" in c:
+            return "MPL-2.0"
+        if "isc license" in c or ("permission to use, copy, modify" in c and "isc" in c):
+            return "ISC"
+        if "redistributions of source code must retain" in c:
+            if "neither the name" in c:
+                return "BSD-3-Clause"
+            return "BSD-2-Clause"
+        return None
+
+    def _check_license_curl(self, session, repo: str, commit_sha: str) -> typing.Optional[str]:
+        candidates = ["LICENSE", "LICENSE.md", "LICENSE.txt", "license", "license.md", "license.txt"]
+        for candidate in candidates:
+            try:
+                content = self.download_text_file(session, repo, candidate, commit_sha)
+                return self._detect_spdx_id(content)
+            except ProcessorError:
+                continue
+        raise ProcessorError(f"No license file found in {repo} at {commit_sha}")
+
+    def license_type(self, session, repo: str, commit_sha: str, github_token: typing.Optional[str] = None) -> typing.Optional[str]:
+        if github_token:
+            return self._check_license_api(session, repo, commit_sha)
+        return self._check_license_curl(session, repo, commit_sha)
 
     class CommentStyle(enum.Enum):
         YAML = "yaml"
@@ -84,7 +140,12 @@ class AutopkgVendorer(Processor):
     def generate_comment_header(self, repo, path, commit_sha, style: CommentStyle) -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         github_url = f"https://github.com/{repo}/blob/{commit_sha}/{path}"
-        style = self.CommentStyle(style.lower()) if isinstance(style, str) else style
+
+        if isinstance(style, str):
+            try:
+                style = self.CommentStyle(style.lower())
+            except ValueError as e:
+                raise ProcessorError("Invalid comment style. Expected one of: yaml, xml") from e
 
         if style == self.CommentStyle.XML:
             return f"<!--\nDownloaded from {github_url}\nCommit: {commit_sha}\nDownloaded at: {timestamp}\n-->\n\n"
@@ -136,17 +197,84 @@ class AutopkgVendorer(Processor):
         with open(dest_path, "w", encoding="utf-8") as f:
             f.write(full_contents)
 
-    def vendor_path(self, session, repo: str, path: str, commit_sha: str, dest_base, rel_base="", convert_to_yaml=False, opinionated_ordering=True):
+    def _list_directory_api(self, session, repo: str, path: str, commit_sha: str) -> list:
         endpoint = f"/repos/{repo}/contents/{path}"
         query = f"ref={commit_sha}"
-
         response_json, status = session.call_api(endpoint, query=query)
         if status != 200:
             raise ProcessorError(f"GitHub API error: {status} for path {path}")
+        return response_json if isinstance(response_json, list) else [response_json]
 
-        items = response_json if isinstance(response_json, list) else [response_json]
+    def _list_directory_curl(self, session, repo: str, path: str, commit_sha: str) -> list:
+        tarball_url = f"https://github.com/{repo}/archive/{commit_sha}.tar.gz"
+        temp_fd, temp_file = tempfile.mkstemp(suffix=".tar.gz")
+        os.close(temp_fd)
+        curl_cmd = ["/usr/bin/curl", "--location", "--silent", "--fail", "--output", temp_file, tarball_url]
+        try:
+            session.download_with_curl(curl_cmd)
+        except Exception as e:
+            raise ProcessorError(f"Failed to download tarball for {repo} at {commit_sha}: {e}")
 
-        vendorer_paths = []
+        try:
+            result = subprocess.run(["tar", "-tz", "-f", temp_file], capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise ProcessorError(f"Failed to list tarball contents: {e.stderr}")
+        finally:
+            os.unlink(temp_file)
+
+        lines = result.stdout.splitlines()
+        if not lines:
+            raise ProcessorError(f"Empty tarball for {repo} at {commit_sha}")
+
+        top_level = lines[0].rstrip("/").split("/")[0]
+        prefix = f"{top_level}/{path}/"
+
+        items = []
+        seen_dirs = set()
+        for line in lines:
+            if line.endswith("/"):
+                continue  # skip explicit directory entries; subdirs are discovered via their file children
+            line = line.rstrip("/")
+            if not line.startswith(prefix):
+                continue
+            rel = line[len(prefix):]
+            if not rel:
+                continue
+            parts = rel.split("/")
+            if len(parts) == 1:
+                item_name = parts[0]
+                items.append({"type": "file", "path": f"{path}/{item_name}", "name": item_name})
+            elif parts[0] not in seen_dirs:
+                dir_name = parts[0]
+                seen_dirs.add(dir_name)
+                items.append({"type": "dir", "path": f"{path}/{dir_name}", "name": dir_name})
+
+        return items
+
+    def _list_directory(self, session, repo: str, path: str, commit_sha: str, github_token: typing.Optional[str] = None) -> list:
+        if github_token:
+            return self._list_directory_api(session, repo, path, commit_sha)
+        return self._list_directory_curl(session, repo, path, commit_sha)
+
+    def vendor_path(self, session, repo: str, path: str, commit_sha: str, dest_base, rel_base="", convert_to_yaml=False, opinionated_ordering=True, github_token=None):
+        path = path.rstrip("/")
+        raw_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
+
+        try:
+            self.head_request(session, raw_url)
+            item_name = os.path.basename(path)
+            rel_path = os.path.join(rel_base, item_name) if rel_base else item_name
+            dest_path = os.path.join(dest_base, rel_path)
+            self.process_file(session, repo, path, item_name, commit_sha, dest_path, convert_to_yaml, opinionated_ordering=opinionated_ordering)
+            return [dest_path]
+        except ProcessorError:
+            pass
+
+        # Path is a directory
+        items = self._list_directory(session, repo, path, commit_sha, github_token=github_token)
+        if not items:
+            raise ProcessorError(f"Path not found as file or directory: {path} in {repo} at {commit_sha}")
+        vendored_paths = []
 
         for item in items:
             item_type = item.get("type")
@@ -156,43 +284,46 @@ class AutopkgVendorer(Processor):
             dest_path = os.path.join(dest_base, rel_path)
 
             if item_type == "dir":
-                self.vendor_path(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml)
+                vendored_paths.extend(self.vendor_path(session, repo, item_path, commit_sha, dest_base, rel_path, convert_to_yaml, opinionated_ordering=opinionated_ordering, github_token=github_token))
             elif item_type == "file":
                 self.process_file(session, repo, item_path, item_name, commit_sha, dest_path, convert_to_yaml, opinionated_ordering=opinionated_ordering)
-                vendorer_paths.append(dest_path)
+                vendored_paths.append(dest_path)
             else:
                 self.output(f"Skipping unknown type '{item_type}' at {item_path}")
 
-        return vendorer_paths
+        return vendored_paths
 
     def main(self):
         repo = self.env["github_repo"]
-        folder_path = self.env["folder_path"]
+        assets = self.env["assets"]
         commit_sha = self.env["commit_sha"]
         github_token = self.env.get("github_token")
-        destination_path = self.env.get("destination_path") or tempfile.mkdtemp(prefix="github_folder_")
+        destination_path = self.env["destination_path"]
         convert_to_yaml = self.env.get("convert_to_yaml", True)
         required_license = self.env.get("required_license", None)
         opinionated_ordering = self.env.get("opinionated_ordering", True)
-
 
         os.makedirs(destination_path, exist_ok=True)
         gh_session = GitHubSession(github_token)
 
         if required_license:
-            found_license = self.license_type(gh_session, repo, commit_sha)
+            found_license = self.license_type(gh_session, repo, commit_sha, github_token=github_token)
             if not found_license == required_license:
-                raise ProcessorError(f"Input variable license_type ({required_license}) does not match the found license ({found_license}).")
+                raise ProcessorError(f"Input variable required_license ({required_license}) does not match the found license ({found_license}).")
 
-        vendored_paths = self.vendor_path(
-            session=gh_session,
-            repo=repo,
-            path=folder_path,
-            commit_sha=commit_sha,
-            dest_base=destination_path,
-            convert_to_yaml=convert_to_yaml,
-            opinionated_ordering=opinionated_ordering,
-        )
+        paths = assets if isinstance(assets, list) else [assets]
+        vendored_paths = []
+        for path in paths:
+            vendored_paths.extend(self.vendor_path(
+                session=gh_session,
+                repo=repo,
+                path=path,
+                commit_sha=commit_sha,
+                dest_base=destination_path,
+                convert_to_yaml=convert_to_yaml,
+                opinionated_ordering=opinionated_ordering,
+                github_token=github_token,
+            ))
 
         self.env["downloaded_folder_path"] = destination_path
         self.output(f"Downloaded folder available at: {destination_path}")

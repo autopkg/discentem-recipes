@@ -1,0 +1,26 @@
+# Downloaded from https://github.com/autopkg/recipes/blob/a501cf3dc4a6c72675b596dd2354602bd611fe3e/Mozilla/Firefox.download.recipe
+# Commit: a501cf3dc4a6c72675b596dd2354602bd611fe3e
+# Downloaded at: 2026-06-26 15:30:03 UTC
+
+Description: "Download recipe for Firefox. Finds and downloads a Firefox release disk image.\nSome useful values for RELEASE are: 'latest', 'esr-latest', 'beta-latest'.\nLOCALE controls the language localization to be downloaded.\nExamples include 'en-US', 'de', 'sv-SE', and 'zh-TW'\nSee the following URLs for more info:\n    http://ftp.mozilla.org/pub/firefox/releases/latest/README.txt\n    http://ftp.mozilla.org/pub/firefox/releases/latest-esr/README.txt\n    http://ftp.mozilla.org/pub/firefox/releases/latest-beta/README.txt"
+Identifier: com.github.autopkg.download.firefox-rc-en_US
+Input:
+  RELEASE: latest
+  LOCALE: en-US
+  NAME: Firefox
+MinimumVersion: '2.0'
+Process:
+- Processor: MozillaURLProvider
+  Arguments:
+    product_name: firefox
+    release: '%RELEASE%'
+    locale: '%LOCALE%'
+- Processor: URLDownloader
+  Arguments:
+    filename: '%NAME%.dmg'
+- Processor: EndOfCheckPhase
+- Processor: CodeSignatureVerifier
+  Arguments:
+    comment: Use wildcard matching for the app so it will also match FirefoxDeveloperEdition.app and FirefoxNightly.app
+    input_path: '%pathname%/Firefox*.app'
+    requirement: anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "43AQ936H96"

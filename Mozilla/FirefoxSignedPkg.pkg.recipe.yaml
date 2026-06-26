@@ -1,0 +1,11 @@
+# Downloaded from https://github.com/autopkg/recipes/blob/a501cf3dc4a6c72675b596dd2354602bd611fe3e/Mozilla/FirefoxSignedPkg.pkg.recipe
+# Commit: a501cf3dc4a6c72675b596dd2354602bd611fe3e
+# Downloaded at: 2026-06-26 15:30:04 UTC
+
+Description: "This recipe downloads the signed installer package that Mozilla made available starting in Firefox 69.0. Because the downloaded file is already a package, this pkg recipe does not add any further actions.\n\nThe RELEASE key used in the standard Firefox recipes are not yet supported.\nLOCALE controls the language localization to be downloaded.\nExamples include 'en-US', 'de', 'sv-SE', and 'zh-TW'\nSee the following URL for possible LOCALE values:\n    http://ftp.mozilla.org/pub/firefox/releases/latest/README.txt\n"
+Identifier: com.github.autopkg.pkg.FirefoxSignedPkg
+Input:
+  NAME: Firefox
+MinimumVersion: '2.0'
+ParentRecipe: com.github.autopkg.download.FirefoxSignedPkg
+Process: []
