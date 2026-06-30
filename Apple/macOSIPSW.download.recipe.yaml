@@ -1,0 +1,14 @@
+Description: Downloads the latest macOS IPSW restore file for Apple Silicon from the MrMacintosh firmware database. Defaults to the latest Golden Gate beta.
+Identifier: com.github.discentem.download.macos-ipsw
+MinimumVersion: '2.3'
+
+Input:
+  NAME: macOSIPSW
+  SECTION_NAME: Golden Gate BETA
+
+Process:
+- Processor: com.github.discentem.SharedProcessors/MrMacintoshIPSWURLProvider
+  Arguments:
+    section_name: '%SECTION_NAME%'
+- Processor: com.github.discentem.SharedProcessors/URLDownloaderWithProgress
+- Processor: EndOfCheckPhase
