@@ -1,0 +1,27 @@
+Description: Downloads the latest version of Acrolinx and imports it into Munki.
+Identifier: com.github.discentem.munki.Acrolinx
+ParentRecipe: com.github.discentem.download.acrolinx
+MinimumVersion: '2.0'
+
+Input:
+  NAME: Acrolinx
+  MUNKI_REPO_SUBDIR: apps/acrolinx
+  pkginfo:
+    catalogs:
+    - testing
+    category: Productivity
+    description: Acrolinx helps you create more readable, findable, and engaging content.
+    developer: Acrolinx
+    display_name: Acrolinx
+    name: '%NAME%'
+    unattended_install: true
+
+Process:
+- Processor: AppDmgVersioner
+  Arguments:
+    dmg_path: '%found_filename%'
+
+- Processor: MunkiImporter
+  Arguments:
+    pkg_path: '%found_filename%'
+    repo_subdirectory: '%MUNKI_REPO_SUBDIR%'

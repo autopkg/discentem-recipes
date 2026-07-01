@@ -1,0 +1,32 @@
+Description: Downloads the latest version of Acrolinx and imports it into Munki.
+Identifier: com.github.discentem.download.acrolinx
+MinimumVersion: '2.0'
+
+Input: {}
+
+Process:
+- Processor: AcrolinxURLProvider
+  Arguments:
+    # acrolinx_username should be provided as an env variable
+    # acrolinx_password should be provided as an env variable
+    acrolinx_uuid: '%acrolinx_uuid%' # should be provided via override
+
+- Processor: URLDownloader
+  Arguments:
+    filename: Acrolinx.zip
+
+- Processor: Unarchiver
+  Arguments:
+    archive_path: '%pathname%' # output of URLDownloader
+    archive_format: 'zip'
+    USE_PYTHON_NATIVE_EXTRACTOR: true
+
+- Processor: FileFinder
+  Arguments:
+    pattern: '%RECIPE_CACHE_DIR%/Acrolinx/*.dmg'
+
+- Processor: CodeSignatureVerifier
+  Arguments:
+    # CodeSignatureVerifier will automatically mount %found_filename% if it detects a dmg
+    input_path: '%found_filename%/Acrolinx Content Analyzer.app/Contents/Frameworks/Acrolinx Content Analyzer Helper (GPU).app'
+    requirement: identifier "com.acrolinx.contentanalyzer.helper.GPU" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = TH2ET36H76
