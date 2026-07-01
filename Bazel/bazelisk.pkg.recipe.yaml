@@ -1,0 +1,28 @@
+Identifier: com.github.discentem.bazelisk.pkg.yaml
+MinimumVersion: '2.3'
+ParentRecipe: com.github.discentem.bazelisk.download.yaml
+
+Input:
+  NAME: bazelisk
+
+Process:
+  - Processor: PkgRootCreator
+    Arguments:
+      pkgroot: '%RECIPE_CACHE_DIR%/pkgroot'
+      pkgdirs:
+        'usr/local/bin': '0775'
+  - Processor: Copier
+    Arguments:
+      source_path: '%pathname%'
+      destination_path: '%pkgroot%/usr/local/bin/bazelisk'
+  - Processor: PkgCreator
+    Arguments:
+      pkg_request:
+        pkgroot: '%RECIPE_CACHE_DIR%/pkgroot'
+        pkgname: '%NAME%-%version%'
+        id: 'com.github.bazelbuild.bazelisk'
+        chown:
+          - path: "/usr/local/bin/bazelisk"
+            user: root
+            group: wheel
+            mode: "0755"
