@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from collections import OrderedDict
 import enum
 from plistlib import dumps as plist_dumps
+from urllib.parse import quote
 
 _here = os.path.dirname(os.path.abspath(__file__))
 if _here not in sys.path:
@@ -70,9 +71,8 @@ class AutopkgVendorer(Processor):
             os.unlink(temp_file)
 
     def download_text_file(self, session, repo: str, path: str, commit_sha: str) -> str:
-        raw_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
-        temp_fd, temp_file = tempfile.mkstemp()
-        os.close(temp_fd)
+        raw_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{quote(path, safe='/')}"
+        temp_file = tempfile.mktemp()
         curl_cmd = ["/usr/bin/curl", "--location", "--silent", "--fail", "--output", temp_file, raw_url]
         try:
             self.head_request(session, raw_url)
@@ -165,12 +165,23 @@ class AutopkgVendorer(Processor):
         return item_name.lower() == "license"
 
     def process_file(self, session, repo, item_path: str, item_name: str, commit_sha: str, dest_path: str, convert_to_yaml: bool = False, opinionated_ordering: bool = True):
+        # Only process text-based files
+        text_extensions = ('.md', '.py', '.yaml', '.recipe')
+        if not item_name.endswith(text_extensions):
+            self.output(f"Skipping non-text file: {item_path}")
+            return
+
         file_contents = self.download_text_file(session, repo, item_path, commit_sha)
         self.output(f"Downloaded: {item_path} → {dest_path}")
 
         if item_name.endswith(('.recipe')):
             plist_data = plist_loads(file_contents.encode("utf-8"))
             plist_data = dict(plist_data)
+
+            # Remove trust info as it's not relevant for vendored recipes
+            if 'ParentRecipeTrustInfo' in plist_data:
+                del plist_data['ParentRecipeTrustInfo']
+                self.output(f"Removed ParentRecipeTrustInfo from: {item_path}")
 
             if opinionated_ordering:
                 for step_index, step in enumerate(plist_data.get('Process', [])):
@@ -197,8 +208,8 @@ class AutopkgVendorer(Processor):
         with open(dest_path, "w", encoding="utf-8") as f:
             f.write(full_contents)
 
-    def _list_directory_api(self, session, repo: str, path: str, commit_sha: str) -> list:
-        endpoint = f"/repos/{repo}/contents/{path}"
+    def vendor_path(self, session, repo: str, path: str, commit_sha: str, dest_base, rel_base="", convert_to_yaml=False, opinionated_ordering=True):
+        endpoint = f"/repos/{repo}/contents/{quote(path, safe='/')}"
         query = f"ref={commit_sha}"
         response_json, status = session.call_api(endpoint, query=query)
         if status != 200:
